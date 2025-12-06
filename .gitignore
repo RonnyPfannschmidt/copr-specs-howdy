@@ -2,3 +2,4 @@
 *.xz
 *.bz2
 *.rpm
+.claude/
