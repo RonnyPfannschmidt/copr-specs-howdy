@@ -4,6 +4,7 @@ Documentation=man:howdy(1)
 
 [Path]
 PathChanged=/etc/authselect/system-auth
+PathChanged=/etc/authselect/password-auth
 
 [Install]
 WantedBy=multi-user.target

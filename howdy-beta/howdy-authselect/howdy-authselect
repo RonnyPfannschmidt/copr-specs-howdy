@@ -12,7 +12,11 @@
 
 set -euo pipefail
 
-SYSTEM_AUTH="/etc/authselect/system-auth"
+# Both files need patching: system-auth (sudo, etc) and password-auth (GDM, login)
+AUTH_FILES=(
+    "/etc/authselect/system-auth"
+    "/etc/authselect/password-auth"
+)
 PAM_HOWDY="/usr/lib64/security/pam_howdy.so"
 HOWDY_LINE="auth        sufficient                                   pam_howdy.so"
 # Insert after this pattern (pam_faillock preauth line or early auth line)
@@ -23,8 +27,8 @@ usage() {
 Usage: howdy-authselect [enable|disable|status]
 
 Commands:
-  enable   Add pam_howdy.so to system-auth PAM configuration
-  disable  Remove pam_howdy.so from system-auth PAM configuration
+  enable   Add pam_howdy.so to PAM configuration (system-auth and password-auth)
+  disable  Remove pam_howdy.so from PAM configuration
   status   Show whether howdy is currently enabled in PAM
 
 This tool patches the authselect-managed PAM configuration to enable
@@ -49,15 +53,79 @@ check_pam_module() {
 }
 
 check_authselect() {
-    if [[ ! -f "$SYSTEM_AUTH" ]]; then
-        echo "Error: $SYSTEM_AUTH not found" >&2
-        echo "authselect does not appear to be managing PAM configuration." >&2
-        exit 1
-    fi
+    for auth_file in "${AUTH_FILES[@]}"; do
+        if [[ ! -f "$auth_file" ]]; then
+            echo "Error: $auth_file not found" >&2
+            echo "authselect does not appear to be managing PAM configuration." >&2
+            exit 1
+        fi
+    done
+}
+
+is_howdy_enabled_in_file() {
+    local file="$1"
+    grep -q "pam_howdy.so" "$file" 2>/dev/null
 }
 
 is_howdy_enabled() {
-    grep -q "pam_howdy.so" "$SYSTEM_AUTH" 2>/dev/null
+    # Check if enabled in all files
+    for auth_file in "${AUTH_FILES[@]}"; do
+        if ! is_howdy_enabled_in_file "$auth_file"; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+enable_file() {
+    local auth_file="$1"
+
+    if is_howdy_enabled_in_file "$auth_file"; then
+        echo "howdy already enabled in $(basename "$auth_file")"
+        return 0
+    fi
+
+    # Create backup
+    cp "$auth_file" "${auth_file}.bak"
+
+    # Insert howdy line after pam_faillock preauth (or after pam_faildelay if no faillock)
+    if grep -q "$INSERT_AFTER" "$auth_file"; then
+        sed -i "/$INSERT_AFTER/a\\$HOWDY_LINE" "$auth_file"
+    else
+        # Fallback: insert after pam_faildelay
+        sed -i "/pam_faildelay.so/a\\$HOWDY_LINE" "$auth_file"
+    fi
+
+    if is_howdy_enabled_in_file "$auth_file"; then
+        echo "howdy enabled in $(basename "$auth_file")"
+    else
+        echo "Error: Failed to enable howdy in $auth_file" >&2
+        mv "${auth_file}.bak" "$auth_file"
+        return 1
+    fi
+}
+
+disable_file() {
+    local auth_file="$1"
+
+    if ! is_howdy_enabled_in_file "$auth_file"; then
+        echo "howdy not enabled in $(basename "$auth_file")"
+        return 0
+    fi
+
+    # Create backup
+    cp "$auth_file" "${auth_file}.bak"
+
+    # Remove howdy line
+    sed -i '/pam_howdy.so/d' "$auth_file"
+
+    if ! is_howdy_enabled_in_file "$auth_file"; then
+        echo "howdy disabled in $(basename "$auth_file")"
+    else
+        echo "Error: Failed to disable howdy in $auth_file" >&2
+        mv "${auth_file}.bak" "$auth_file"
+        return 1
+    fi
 }
 
 enable_howdy() {
@@ -65,28 +133,15 @@ enable_howdy() {
     check_pam_module
     check_authselect
 
-    if is_howdy_enabled; then
-        echo "howdy is already enabled in PAM configuration"
-        return 0
-    fi
+    local failed=0
+    for auth_file in "${AUTH_FILES[@]}"; do
+        enable_file "$auth_file" || failed=1
+    done
 
-    # Create backup
-    cp "$SYSTEM_AUTH" "${SYSTEM_AUTH}.bak"
-
-    # Insert howdy line after pam_faillock preauth (or after pam_faildelay if no faillock)
-    if grep -q "$INSERT_AFTER" "$SYSTEM_AUTH"; then
-        sed -i "/$INSERT_AFTER/a\\$HOWDY_LINE" "$SYSTEM_AUTH"
-    else
-        # Fallback: insert after pam_faildelay
-        sed -i "/pam_faildelay.so/a\\$HOWDY_LINE" "$SYSTEM_AUTH"
-    fi
-
-    if is_howdy_enabled; then
+    if [[ $failed -eq 0 ]]; then
         echo "howdy enabled successfully in PAM configuration"
     else
-        echo "Error: Failed to enable howdy" >&2
-        # Restore backup
-        mv "${SYSTEM_AUTH}.bak" "$SYSTEM_AUTH"
+        echo "Error: Failed to enable howdy in some files" >&2
         exit 1
     fi
 }
@@ -95,22 +150,15 @@ disable_howdy() {
     check_root
     check_authselect
 
-    if ! is_howdy_enabled; then
-        echo "howdy is not enabled in PAM configuration"
-        return 0
-    fi
+    local failed=0
+    for auth_file in "${AUTH_FILES[@]}"; do
+        disable_file "$auth_file" || failed=1
+    done
 
-    # Create backup
-    cp "$SYSTEM_AUTH" "${SYSTEM_AUTH}.bak"
-
-    # Remove howdy line
-    sed -i '/pam_howdy.so/d' "$SYSTEM_AUTH"
-
-    if ! is_howdy_enabled; then
+    if [[ $failed -eq 0 ]]; then
         echo "howdy disabled successfully in PAM configuration"
     else
-        echo "Error: Failed to disable howdy" >&2
-        mv "${SYSTEM_AUTH}.bak" "$SYSTEM_AUTH"
+        echo "Error: Failed to disable howdy in some files" >&2
         exit 1
     fi
 }
@@ -118,12 +166,13 @@ disable_howdy() {
 show_status() {
     check_authselect
 
-    if is_howdy_enabled; then
-        echo "howdy is ENABLED in PAM configuration"
-        grep "pam_howdy.so" "$SYSTEM_AUTH" | head -1
-    else
-        echo "howdy is DISABLED in PAM configuration"
-    fi
+    for auth_file in "${AUTH_FILES[@]}"; do
+        if is_howdy_enabled_in_file "$auth_file"; then
+            echo "$(basename "$auth_file"): ENABLED"
+        else
+            echo "$(basename "$auth_file"): DISABLED"
+        fi
+    done
 }
 
 case "${1:-}" in
