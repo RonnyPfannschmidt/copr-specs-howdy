@@ -5,7 +5,7 @@
 
 Name:           howdy
 Version:        3.0.0
-Release:        8%{?dist}
+Release:        9%{?dist}
 Summary:        Windows Hello™ style authentication for Linux
 
 # The entire source code is GPL-3.0-or-later except:
@@ -119,7 +119,7 @@ mkdir -p   %{buildroot}%{_sysconfdir}/%{name}/models/
 install -Dm 0644 howdy/src/dlib-data/*.dat -t %{buildroot}%{_datadir}/%{name}/dlib-data/
 
 # install the SELinux policy
-install -Dm 0644 howdy.pp %{buildroot}%{_datadir}/selinux/targeted/contexts/files/howdy.pp
+install -Dm 0644 howdy.pp %{buildroot}%{_datadir}/selinux/targeted/howdy.pp
 
 # install udev rules for video device access
 install -Dm 0644 %{S:4} %{buildroot}%{_udevrulesdir}/99-howdy-video.rules
@@ -130,7 +130,7 @@ if command -v sestatus >/dev/null 2>&1 && sestatus | grep -q 'SELinux status:.*e
     # Check if the SELinux module is already installed
     if ! semodule -l | grep -q howdy; then
         # Load the SELinux policy module if it's not already loaded
-        semodule -i %{_datadir}/selinux/targeted/contexts/files/howdy.pp
+        semodule -i %{_datadir}/selinux/targeted/howdy.pp
     fi
 fi
 
@@ -151,7 +151,7 @@ if command -v sestatus >/dev/null 2>&1 && sestatus | grep -q 'SELinux status:.*e
     # Check if the howdy module is installed
     if semodule -l | grep -q howdy; then
         # Remove the howdy SELinux policy module
-        semodule -d howdy
+        semodule -r howdy
     fi
 fi
 
@@ -171,7 +171,7 @@ fi
 %dir %{_sysconfdir}/%{name}/models/
 %config(noreplace) %{_sysconfdir}/%{name}/config.ini
 %config(noreplace) %{_sysconfdir}/profile.d/%{name}.*
-%{_datadir}/selinux/*/contexts/files/howdy.pp
+%{_datadir}/selinux/*/howdy.pp
 %{_udevrulesdir}/99-howdy-video.rules
 
 %files gtk
