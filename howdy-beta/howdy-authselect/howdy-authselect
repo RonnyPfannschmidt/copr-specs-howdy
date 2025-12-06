@@ -1,0 +1,146 @@
+#!/bin/bash
+# howdy-authselect - Enable/disable howdy face authentication in PAM
+#
+# WARNING: This is a gruesome AI-dreamed hack.
+#
+# Fedora's authselect has an "all or nothing" profile problem - you cannot
+# extend profiles, only replace them entirely. Rather than maintaining full
+# copies of upstream profiles just to add one PAM module, this script patches
+# pam_howdy.so into the existing authselect-managed configuration.
+#
+# It can be run manually or triggered automatically via systemd path unit.
+
+set -euo pipefail
+
+SYSTEM_AUTH="/etc/authselect/system-auth"
+PAM_HOWDY="/usr/lib64/security/pam_howdy.so"
+HOWDY_LINE="auth        sufficient                                   pam_howdy.so"
+# Insert after this pattern (pam_faillock preauth line or early auth line)
+INSERT_AFTER="pam_faillock.so preauth"
+
+usage() {
+    cat <<EOF
+Usage: howdy-authselect [enable|disable|status]
+
+Commands:
+  enable   Add pam_howdy.so to system-auth PAM configuration
+  disable  Remove pam_howdy.so from system-auth PAM configuration
+  status   Show whether howdy is currently enabled in PAM
+
+This tool patches the authselect-managed PAM configuration to enable
+face authentication via howdy. Run this after 'authselect select' to
+re-enable howdy, or use the systemd service for automatic patching.
+EOF
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "Error: This script must be run as root" >&2
+        exit 1
+    fi
+}
+
+check_pam_module() {
+    if [[ ! -f "$PAM_HOWDY" ]]; then
+        echo "Error: pam_howdy.so not found at $PAM_HOWDY" >&2
+        echo "Please install the howdy package first." >&2
+        exit 1
+    fi
+}
+
+check_authselect() {
+    if [[ ! -f "$SYSTEM_AUTH" ]]; then
+        echo "Error: $SYSTEM_AUTH not found" >&2
+        echo "authselect does not appear to be managing PAM configuration." >&2
+        exit 1
+    fi
+}
+
+is_howdy_enabled() {
+    grep -q "pam_howdy.so" "$SYSTEM_AUTH" 2>/dev/null
+}
+
+enable_howdy() {
+    check_root
+    check_pam_module
+    check_authselect
+
+    if is_howdy_enabled; then
+        echo "howdy is already enabled in PAM configuration"
+        return 0
+    fi
+
+    # Create backup
+    cp "$SYSTEM_AUTH" "${SYSTEM_AUTH}.bak"
+
+    # Insert howdy line after pam_faillock preauth (or after pam_faildelay if no faillock)
+    if grep -q "$INSERT_AFTER" "$SYSTEM_AUTH"; then
+        sed -i "/$INSERT_AFTER/a\\$HOWDY_LINE" "$SYSTEM_AUTH"
+    else
+        # Fallback: insert after pam_faildelay
+        sed -i "/pam_faildelay.so/a\\$HOWDY_LINE" "$SYSTEM_AUTH"
+    fi
+
+    if is_howdy_enabled; then
+        echo "howdy enabled successfully in PAM configuration"
+    else
+        echo "Error: Failed to enable howdy" >&2
+        # Restore backup
+        mv "${SYSTEM_AUTH}.bak" "$SYSTEM_AUTH"
+        exit 1
+    fi
+}
+
+disable_howdy() {
+    check_root
+    check_authselect
+
+    if ! is_howdy_enabled; then
+        echo "howdy is not enabled in PAM configuration"
+        return 0
+    fi
+
+    # Create backup
+    cp "$SYSTEM_AUTH" "${SYSTEM_AUTH}.bak"
+
+    # Remove howdy line
+    sed -i '/pam_howdy.so/d' "$SYSTEM_AUTH"
+
+    if ! is_howdy_enabled; then
+        echo "howdy disabled successfully in PAM configuration"
+    else
+        echo "Error: Failed to disable howdy" >&2
+        mv "${SYSTEM_AUTH}.bak" "$SYSTEM_AUTH"
+        exit 1
+    fi
+}
+
+show_status() {
+    check_authselect
+
+    if is_howdy_enabled; then
+        echo "howdy is ENABLED in PAM configuration"
+        grep "pam_howdy.so" "$SYSTEM_AUTH" | head -1
+    else
+        echo "howdy is DISABLED in PAM configuration"
+    fi
+}
+
+case "${1:-}" in
+    enable)
+        enable_howdy
+        ;;
+    disable)
+        disable_howdy
+        ;;
+    status)
+        show_status
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

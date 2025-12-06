@@ -1,0 +1,10 @@
+[Unit]
+Description=Re-enable howdy in PAM after authselect changes (gruesome hack)
+Documentation=man:howdy(1)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/howdy-authselect enable
+# Small delay to ensure authselect has finished writing
+ExecStartPre=/bin/sleep 1

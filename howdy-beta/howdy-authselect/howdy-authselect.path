@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for authselect configuration changes
+Documentation=man:howdy(1)
+
+[Path]
+PathChanged=/etc/authselect/system-auth
+
+[Install]
+WantedBy=multi-user.target
