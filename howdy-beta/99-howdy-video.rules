@@ -1,0 +1,5 @@
+# Howdy video device access rules
+# Allow users in the video group to access video devices for face recognition
+
+# Grant video group read/write access to video devices
+KERNEL=="video[0-9]*", GROUP="video", MODE="0660"

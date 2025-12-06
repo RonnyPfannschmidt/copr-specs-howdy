@@ -5,7 +5,7 @@
 
 Name:           howdy
 Version:        3.0.0
-Release:        7%{?dist}
+Release:        8%{?dist}
 Summary:        Windows Hello™ style authentication for Linux
 
 # The entire source code is GPL-3.0-or-later except:
@@ -16,6 +16,7 @@ Source0:        %{forgesource}
 Source1:        howdy_profile.sh
 Source2:        howdy_profile.csh
 Source3:        howdy.te
+Source4:        99-howdy-video.rules
 Source10:       https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2
 Source11:       https://github.com/davisking/dlib-models/raw/master/mmod_human_face_detector.dat.bz2
 Source12:       https://github.com/davisking/dlib-models/raw/master/shape_predictor_5_face_landmarks.dat.bz2
@@ -119,6 +120,9 @@ install -Dm 0644 howdy/src/dlib-data/*.dat -t %{buildroot}%{_datadir}/%{name}/dl
 # install the SELinux policy
 install -Dm 0644 howdy.pp %{buildroot}%{_datadir}/selinux/targeted/contexts/files/howdy.pp
 
+# install udev rules for video device access
+install -Dm 0644 %{S:4} %{buildroot}%{_udevrulesdir}/99-howdy-video.rules
+
 %post
 # Install SELinux module
 if command -v sestatus >/dev/null 2>&1 && sestatus | grep -q 'SELinux status:.*enabled'; then
@@ -128,6 +132,17 @@ if command -v sestatus >/dev/null 2>&1 && sestatus | grep -q 'SELinux status:.*e
         semodule -i %{_datadir}/selinux/targeted/contexts/files/howdy.pp
     fi
 fi
+
+# Add gdm user to video group for GDM login face recognition
+if getent passwd gdm >/dev/null 2>&1; then
+    if ! id -nG gdm 2>/dev/null | grep -qw video; then
+        usermod -aG video gdm 2>/dev/null || :
+    fi
+fi
+
+# Reload udev rules
+udevadm control --reload-rules 2>/dev/null || :
+udevadm trigger --subsystem-match=video4linux 2>/dev/null || :
 
 %postun
 # Uninstall SELinux module
@@ -156,6 +171,7 @@ fi
 %config(noreplace) %{_sysconfdir}/%{name}/config.ini
 %config(noreplace) %{_sysconfdir}/profile.d/%{name}.*
 %{_datadir}/selinux/*/contexts/files/howdy.pp
+%{_udevrulesdir}/99-howdy-video.rules
 
 %files gtk
 %{_bindir}/%{name}-gtk
@@ -169,6 +185,11 @@ fi
 %{_datadir}/%{name}/dlib-data/*.dat
 
 %changelog
+* Sat Dec 06 2025 Ronny Pfannschmidt <packaging@ronnypfannschmidt.de> - 3.0.0-8
+- Add SELinux policy for video device access
+- Add udev rules for video device permissions
+- Add gdm user to video group for GDM login support
+
 * Sun Jul 20 2025 Arthur Bols <copr@bols.dev> - 3.0.0-7
 - Remove dependency on ffmpeg-python
 
