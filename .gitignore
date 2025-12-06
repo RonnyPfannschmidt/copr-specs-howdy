@@ -3,3 +3,5 @@
 *.bz2
 *.rpm
 .claude/
+TODO.md
+CLAUDE.local.md
