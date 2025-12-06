@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(copr-cli get-build:*)",
+      "Bash(copr-cli status:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -13,6 +13,8 @@ Source3:        README.md
 
 BuildArch:      noarch
 
+BuildRequires:  systemd-rpm-macros
+
 Requires:       howdy
 Requires:       authselect
 Requires:       systemd
@@ -38,6 +40,7 @@ the PAM config.
 install -Dm 0755 %{SOURCE0} %{buildroot}%{_bindir}/howdy-authselect
 install -Dm 0644 %{SOURCE1} %{buildroot}%{_unitdir}/howdy-authselect.service
 install -Dm 0644 %{SOURCE2} %{buildroot}%{_unitdir}/howdy-authselect.path
+install -Dm 0644 %{SOURCE3} %{buildroot}%{_docdir}/%{name}/README.md
 
 %post
 %systemd_post howdy-authselect.path howdy-authselect.service
@@ -49,10 +52,10 @@ install -Dm 0644 %{SOURCE2} %{buildroot}%{_unitdir}/howdy-authselect.path
 %systemd_postun_with_restart howdy-authselect.path howdy-authselect.service
 
 %files
-%doc %{SOURCE3}
 %{_bindir}/howdy-authselect
 %{_unitdir}/howdy-authselect.service
 %{_unitdir}/howdy-authselect.path
+%{_docdir}/%{name}/README.md
 
 %changelog
 * Sat Dec 06 2025 Ronny Pfannschmidt <packaging@ronnypfannschmidt.de> - 1.0.0-1
