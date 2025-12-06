@@ -33,6 +33,7 @@ BuildRequires:  policycoreutils-devel
 BuildRequires:  pkgconfig(INIReader)
 BuildRequires:  pkgconfig(libevdev)
 BuildRequires:  pkgconfig(pam)
+BuildRequires:  systemd-rpm-macros
 
 Requires:       hicolor-icon-theme
 Requires:       python3dist(dlib)
